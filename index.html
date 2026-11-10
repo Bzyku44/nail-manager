@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NailStudio Manager</title>
-    <!-- Tailwind CSS dla szybkiego i ładnego stylu -->
+    <!-- Tailwind CSS dla nowoczesnego wyglądu w stylu beauty -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Oficjalna biblioteka Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -15,10 +17,9 @@
 
     <!-- GŁÓWNY KONTENER APLIKACJI -->
     <main id="app" class="max-w-md mx-auto w-full p-4 flex-grow flex flex-col justify-center">
-        <!-- Zawartość będzie dynamicznie podmieniana przez JavaScript -->
         <div class="text-center py-12">
             <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-rose-400 mx-auto mb-4"></div>
-            <p class="text-stone-500 text-sm">Ładowanie aplikacji...</p>
+            <p class="text-stone-500 text-sm">Łaczenie z bazą danych...</p>
         </div>
     </main>
 
@@ -27,151 +28,235 @@
         NailStudio Manager &copy; 2026
     </footer>
 
-    <!-- SKRYPT LOGIKI APLIKACJI -->
+    <!-- SKRYPT LOGIKI ORAZ SUPABASE -->
     <script>
-        // Symulacja bazy danych w pamięci (w prawdziwej aplikacji zastąpioną Supabase / Firebase)
-        const mockClients = [
-            { id: 1, name: "Anna Nowak", phone: "+48 500 600 700", token: "ania123", nextVisit: "Piątek, 20 listopada, 14:00", notes: "Uczulona na bazę X, lubi kawę z mlekiem owsianym." },
-            { id: 2, name: "Katarzyna Kowalska", phone: "+48 501 602 703", token: "Kasia456", nextVisit: "Poniedziałek, 23 listopada, 10:00", notes: "Preferuje krótkie kwadratowe paznokcie." }
-        ];
+        // ==========================================
+        // 1. KONFIGURACJA SUPABASE (Wpisz swoje dane)
+        // ==========================================
+        const SUPABASE_URL = 'https://TOWJ_PROJEKT.supabase.co'; // Zamień na swój URL z Supabase
+        const SUPABASE_ANON_KEY = 'TWOJ_ANON_PUBLIC_KEY';      // Zamień na swój klucz anon/public z Supabase
+        
+        let supabaseClient = null;
+        if (SUPABASE_URL !== 'https://TOWJ_PROJEKT.supabase.co') {
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        }
 
-        const mockPhotos = {
-            1: ["https://images.unsplash.com/photo-1632345031435-8777f6b9ae8c?w=400", "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=400"],
-            2: ["https://images.unsplash.com/photo-1519014816548-bf5fe059798b?w=400"]
-        };
-
-        const publicInspirations = [
-            { id: 1, title: "Klasyczny French", img: "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=400" },
-            { id: 2, title: "Babyboomer Elegance", img: "https://images.unsplash.com/photo-1632345031435-8777f6b9ae8c?w=400" }
-        ];
-
-        // Główna funkcja routingu po załadowaniu strony
-        function initApp() {
+        // ==========================================
+        // 2. GŁÓWNY ROUTER APLIKACJI
+        // ==========================================
+        window.onload = async function() {
             const urlParams = new URLSearchParams(window.location.search);
             const token = urlParams.get('token');
             const view = urlParams.get('view');
+            const container = document.getElementById('app');
 
-            const appContainer = document.getElementById('app');
+            // Sprawdzenie czy Supabase został skonfigurowany
+            if (!supabaseClient) {
+                container.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 text-center space-y-3">
+                        <h2 class="text-xl font-bold text-rose-500">Wymagana konfiguracja</h2>
+                        <p class="text-xs text-stone-600">Musisz uzupełnić zmienne <strong>SUPABASE_URL</strong> oraz <strong>SUPABASE_ANON_KEY</strong> w kodzie pliku index.html, aby aplikacja mogła połączyć się z bazą.</p>
+                    </div>
+                `;
+                return;
+            }
 
             if (token) {
-                // WIDOK KLIENTKI (jeśli w adresie jest np. ?token=ania123)
-                const client = mockClients.find(c => c.token === token);
-                if (!client) {
-                    appContainer.innerHTML = `<div class="text-center"><h2 class="text-xl font-bold text-rose-500 mb-2">Błąd dostępu</h2><p class="text-stone-600 text-sm">Nie znaleziono profilu lub link jest niepoprawny.</p></div>`;
-                    return;
-                }
-                renderClientView(client, appContainer);
+                // WIDOK KLIENTKI (po unikalnym tokenie)
+                await loadClientViewData(token, container);
             } else if (view === 'admin') {
-                // WIDOK ŻONY / ADMINISTRATORA (?view=admin)
-                renderAdminView(appContainer);
+                // WIDOK ŻONY / ADMINISTRATORA
+                await loadAdminViewData(container);
             } else {
-                // STRONA STARTOWA WYBORU WIDOKU (dla celów testowych)
-                appContainer.innerHTML = `
+                // STRONA WYBORU TRYBU (dla ułatwienia testów)
+                container.innerHTML = `
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 text-center">
                         <h1 class="text-2xl font-bold text-stone-800 mb-2">💅 NailStudio Manager</h1>
                         <p class="text-stone-500 text-sm mb-6">Wybierz widok do testowania aplikacji:</p>
                         <div class="space-y-3">
                             <a href="?view=admin" class="block w-full py-3 bg-stone-900 text-white rounded-xl font-medium text-sm shadow-sm hover:bg-stone-800 transition">Panel Żony (Administrator)</a>
-                            <a href="?token=ania123" class="block w-full py-3 bg-rose-500 text-white rounded-xl font-medium text-sm shadow-sm hover:bg-rose-600 transition">Panel Klientki (Ania Nowak)</a>
+                            <p class="text-[11px] text-stone-400">Aby wejść jako klientka, użyj linku z unikalnym tokenem wygenerowanym w panelu admina (np. <code class="bg-stone-100 px-1 py-0.5 rounded">?token=twój_token</code>).</p>
                         </div>
                     </div>
                 `;
             }
-        }
+        };
 
-        // --- RENDEROWANIE: PANEL KLIENTKI ---
-        function renderClientView(client, container) {
-            const photos = mockPhotos[client.id] || [];
-            
+        // ==========================================
+        // 3. LOGIKA I WIDOK KLIENTKI
+        // ==========================================
+        async function loadClientViewData(token, container) {
+            // Pobranie danych klientki po tokenie
+            const { data: client, error } = await supabaseClient
+                .from('clients')
+                .select('*')
+                .eq('token', token)
+                .single();
+
+            if (error || !client) {
+                container.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 text-center">
+                        <h2 class="text-xl font-bold text-rose-500 mb-2">Błąd dostępu</h2>
+                        <p class="text-stone-600 text-sm">Nie znaleziono profilu lub link jest niepoprawny.</p>
+                    </div>`;
+                return;
+            }
+
+            // Pobranie najbliższej wizyty klientki
+            const { data: appointments } = await supabaseClient
+                .from('appointments')
+                .select('*')
+                .eq('client_id', client.id)
+                .eq('status', 'scheduled')
+                .order('start_time', { ascending: true })
+                .limit(1);
+
+            const nextAppointment = appointments && appointments.length > 0 ? new Date(appointments[0].start_time).toLocaleString('pl-PL') : 'Brak zaplanowanych wizyt';
+
+            // Pobranie prywatnych zdjęć klientki
+            const { data: photos } = await supabaseClient
+                .from('photos')
+                .select('*')
+                .eq('client_id', client.id)
+                .eq('is_public', false);
+
+            // Pobranie ogólnych inspiracji z salonu
+            const { data: inspirations } = await supabaseClient
+                .from('photos')
+                .select('*')
+                .eq('is_public', true)
+                .limit(6);
+
+            // Wyrenderowanie interfejsu klientki
             container.innerHTML = `
                 <div class="space-y-6">
-                    <!-- Nagłówek powitalny -->
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100">
                         <span class="text-xs uppercase tracking-wider text-rose-500 font-semibold">Twój profil salonu</span>
                         <h2 class="text-2xl font-bold text-stone-800 mt-1">Cześć, ${client.name.split(' ')[0]}! 👋</h2>
                     </div>
 
-                    <!-- Nadchodząca wizyta -->
                     <div class="bg-rose-50 border border-rose-100 p-5 rounded-2xl">
                         <div class="flex items-center space-x-3 mb-2">
                             <span class="text-xl">📅</span>
                             <h3 class="font-semibold text-stone-800 text-sm">Twoja następna wizyta</h3>
                         </div>
-                        <p class="text-rose-900 font-bold text-lg mb-3">${client.nextVisit}</p>
-                        <button onclick="alert('Zapisano przypomnienie w kalendarzu!')" class="w-full py-2.5 bg-rose-500 text-white text-xs font-semibold rounded-xl shadow-sm hover:bg-rose-600 transition">
-                            Dodaj do kalendarza telefonu
-                        </button>
+                        <p class="text-rose-900 font-bold text-base mb-3">${nextAppointment}</p>
                     </div>
 
-                    <!-- Prywatny Album Paznokci -->
                     <div class="bg-white p-5 rounded-2xl shadow-sm border border-stone-100">
                         <h3 class="font-semibold text-stone-800 text-sm mb-3">✨ Twoje dotychczasowe paznokcie</h3>
                         <div class="grid grid-cols-2 gap-3">
-                            ${photos.length > 0 ? photos.map(img => `<img src="${img}" class="rounded-xl object-cover h-32 w-full border border-stone-100" />`).join('') : '<p class="text-xs text-stone-400 col-span-2">Brak zdjęć w historii.</p>'}
+                            ${photos && photos.length > 0 ? photos.map(p => `<img src="${p.image_url}" class="rounded-xl object-cover h-32 w-full border border-stone-100" />`).join('') : '<p class="text-xs text-stone-400 col-span-2">Brak zdjęć w historii.</p>'}
                         </div>
                     </div>
 
-                    <!-- Galeria Inspiracji -->
                     <div class="bg-white p-5 rounded-2xl shadow-sm border border-stone-100">
                         <h3 class="font-semibold text-stone-800 text-sm mb-3">💡 Inspiracje z salonu</h3>
                         <div class="grid grid-cols-2 gap-3">
-                            ${publicInspirations.map(insp => `
+                            ${inspirations && inspirations.length > 0 ? inspirations.map(insp => `
                                 <div class="relative group">
-                                    <img src="${insp.img}" class="rounded-xl object-cover h-32 w-full border border-stone-100" />
-                                    <button onclick="alert('Wybrano wzór: ${insp.title}! Żona została powiadomiona.')" class="absolute bottom-2 left-2 right-2 py-1.5 bg-white/90 backdrop-blur-sm text-stone-800 text-[10px] font-bold rounded-lg shadow-sm hover:bg-white transition">
+                                    <img src="${insp.image_url}" class="rounded-xl object-cover h-32 w-full border border-stone-100" />
+                                    <button onclick="alert('Wybrano wzór jako inspirację na kolejną wizytę!')" class="absolute bottom-2 left-2 right-2 py-1.5 bg-white/90 backdrop-blur-sm text-stone-800 text-[10px] font-bold rounded-lg shadow-sm hover:bg-white transition">
                                         Chcę taki! 💖
                                     </button>
                                 </div>
-                            `).join('')}
+                            `).join('') : '<p class="text-xs text-stone-400 col-span-2">Brak publicznych inspiracji.</p>'}
                         </div>
                     </div>
                 </div>
             `;
         }
 
-        // --- RENDEROWANIE: PANEL ŻONY (ADMIN) ---
-        function renderAdminView(container) {
+        // ==========================================
+        // 4. LOGIKA I WIDOK ŻONY (ADMIN)
+        // ==========================================
+        async function loadAdminViewData(container) {
+            // Pobranie wszystkich klientek z bazy
+            const { data: clients, error } = await supabaseClient
+                .from('clients')
+                .select('*')
+                .order('created_at', { ascending: false });
+
             container.innerHTML = `
                 <div class="space-y-6">
                     <div class="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-stone-100">
                         <div>
                             <span class="text-xs text-stone-400 font-medium">Panel Zarządzania</span>
-                            <h2 class="text-lg font-bold text-stone-800">Kalendarz Salonu 📋</h2>
+                            <h2 class="text-lg font-bold text-stone-800">Baza Klientek 📋</h2>
                         </div>
                         <a href="?" class="text-xs font-semibold text-stone-500 hover:text-stone-800">Wyloguj</a>
                     </div>
 
-                    <!-- Lista klientek / wizyt -->
+                    <!-- Formularz dodawania nowej klientki -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-stone-100 space-y-3">
+                        <h3 class="font-semibold text-stone-800 text-sm">Dodaj nową klientkę</h3>
+                        <input type="text" id="newName" placeholder="Imię i nazwisko" class="w-full px-3 py-2 text-xs border border-stone-200 rounded-xl focus:outline-none focus:border-rose-400" />
+                        <input type="text" id="newPhone" placeholder="Numer telefonu" class="w-full px-3 py-2 text-xs border border-stone-200 rounded-xl focus:outline-none focus:border-rose-400" />
+                        <textarea id="newNotes" placeholder="Poufne notatki (alergie, preferencje...)" class="w-full px-3 py-2 text-xs border border-stone-200 rounded-xl focus:outline-none focus:border-rose-400"></textarea>
+                        <button onclick="handleAddNewClient()" class="w-full py-2.5 bg-rose-500 text-white text-xs font-semibold rounded-xl shadow-sm hover:bg-rose-600 transition">
+                            Zapisz klientkę w bazie 💾
+                        </button>
+                    </div>
+
+                    <!-- Lista klientek -->
                     <div class="bg-white p-5 rounded-2xl shadow-sm border border-stone-100 space-y-4">
-                        <h3 class="font-semibold text-stone-800 text-sm">Nadchodzące wizyty</h3>
+                        <h3 class="font-semibold text-stone-800 text-sm">Zapisane klientki</h3>
                         
-                        ${mockClients.map(client => `
-                            <div class="p-4 bg-stone-50 rounded-xl border border-stone-100 space-y-2">
-                                <div class="flex justify-between items-start">
-                                    <div>
-                                        <h4 class="font-bold text-stone-800 text-sm">${client.name}</h4>
-                                        <p class="text-xs text-stone-500">${client.phone}</p>
+                        <div class="space-y-3">
+                            ${clients && clients.length > 0 ? clients.map(client => `
+                                <div class="p-4 bg-stone-50 rounded-xl border border-stone-100 space-y-2">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h4 class="font-bold text-stone-800 text-sm">${client.name}</h4>
+                                            <p class="text-xs text-stone-500">${client.phone || 'Brak numeru'}</p>
+                                        </div>
                                     </div>
-                                    <span class="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full font-medium">Potwierdzona</span>
-                                </div>
-                                <p class="text-xs text-rose-600 font-medium">Termin: ${client.nextVisit}</p>
-                                <div class="bg-white p-2.5 rounded-lg border border-stone-200 text-xs text-stone-600">
-                                    <strong>Notatki:</strong> ${client.notes}
-                                </div>
-                                <div class="pt-1 flex space-x-2">
-                                    <button onclick="navigator.clipboard.writeText(window.location.origin + '/?token=${client.token}'); alert('Skopiowano unikalny link dla ${client.name}!');" class="flex-1 py-2 bg-stone-900 text-white text-xs font-semibold rounded-lg shadow-sm hover:bg-stone-800 transition">
-                                        Kopiuj link SMS 🔗
+                                    <div class="bg-white p-2.5 rounded-lg border border-stone-200 text-xs text-stone-600">
+                                        <strong>Notatki:</strong> ${client.notes || 'Brak notatek'}
+                                    </div>
+                                    <button onclick="copyClientLink('${client.token}')" class="w-full py-2 bg-stone-900 text-white text-xs font-semibold rounded-lg shadow-sm hover:bg-stone-800 transition">
+                                        Kopiuj unikalny link SMS 🔗
                                     </button>
                                 </div>
-                            </div>
-                        `).join('')}
+                            `).join('') : '<p class="text-xs text-stone-400 text-center py-4">Brak klientek w bazie.</p>'}
+                        </div>
                     </div>
                 </div>
             `;
         }
 
-        // Uruchomienie aplikacji przy starcie strony
-        window.onload = initApp;
+        // Funkcja dodawania klientki przez panel żony
+        async function handleAddNewClient() {
+            const name = document.getElementById('newName').value;
+            const phone = document.getElementById('newPhone').value;
+            const notes = document.getElementById('newNotes').value;
+
+            if (!name) {
+                alert('Podaj imię i nazwisko klientki!');
+                return;
+            }
+
+            // Generowanie unikalnego tokenu dostępu
+            const token = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+            const { error } = await supabaseClient
+                .from('clients')
+                .insert([{ name, phone, notes, token }]);
+
+            if (error) {
+                alert('Błąd podczas zapisywania: ' + error.message);
+            } else {
+                alert('Klientka została pomyślnie dodana do bazy!');
+                window.location.reload();
+            }
+        }
+
+        // Funkcja kopiowania linku klientki do schowka
+        function copyClientLink(token) {
+            const fullLink = window.location.origin + window.location.pathname + '?token=' + token;
+            navigator.clipboard.writeText(fullLink);
+            alert('Skopiowano unikalny link klientki! Możesz go wkleić do wiadomości SMS lub WhatsApp.');
+        }
     </script>
 </body>
 </html>
